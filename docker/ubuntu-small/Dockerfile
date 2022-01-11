@@ -139,6 +139,11 @@ ARG GDAL_RELEASE_DATE
 ARG GDAL_BUILD_IS_RELEASE
 ARG GDAL_REPOSITORY=OSGeo/gdal
 
+COPY ./hexagon/ERDAS-ECW_JPEG_2000_SDK-5.5.0/Desktop_Read-Only /usr/local/hexagon/ecw5.5.0
+COPY ./ecw.ld.so.conf /etc/ld.so.conf.d/ecw.conf
+RUN ldconfig
+
+
 RUN . /buildscripts/bh-set-envvars.sh \
     && if test "${GDAL_VERSION}" = "master"; then \
         export GDAL_VERSION=$(curl -Ls https://api.github.com/repos/${GDAL_REPOSITORY}/commits/HEAD -H "Accept: application/vnd.github.VERSION.sha"); \
@@ -148,9 +153,10 @@ RUN . /buildscripts/bh-set-envvars.sh \
         export GDAL_SHA1SUM=${GDAL_VERSION}; \
     fi \
     && mkdir gdal \
+    && echo "wget -q https://github.com/${GDAL_REPOSITORY}/archive/${GDAL_VERSION}.tar.gz" \
     && wget -q https://github.com/${GDAL_REPOSITORY}/archive/${GDAL_VERSION}.tar.gz -O - \
         | tar xz -C gdal --strip-components=1 \
-    && cd gdal \
+    && cd gdal/gdal \
     && ./autogen.sh \
     && if test "${RSYNC_REMOTE:-}" != ""; then \
         echo "Downloading cache..."; \
@@ -173,6 +179,7 @@ RUN . /buildscripts/bh-set-envvars.sh \
     --with-webp --with-proj=/build${PROJ_INSTALL_PREFIX} \
     --with-libtiff=internal --with-rename-internal-libtiff-symbols \
     --with-geotiff=internal --with-rename-internal-libgeotiff-symbols \
+    --with-ecw=/usr/local/hexagon/ecw5.5.0 \
     && make -j$(nproc) \
     && make install DESTDIR="/build" \
     && if test "${RSYNC_REMOTE:-}" != ""; then \
@@ -200,6 +207,9 @@ RUN . /buildscripts/bh-set-envvars.sh \
 
 # Build final image
 FROM $TARGET_BASE_IMAGE as runner
+
+LABEL org.opencontainers.image.source https://github.com/dbca-wa/gdal
+
 
 USER root
 RUN date
@@ -239,5 +249,16 @@ COPY --from=builder  /build/usr/share/gdal/ /usr/share/gdal/
 COPY --from=builder  /build/usr/include/ /usr/include/
 COPY --from=builder  /build_gdal_python/usr/ /usr/
 COPY --from=builder  /build_gdal_version_changing/usr/ /usr/
+
+COPY ./hexagon/ERDAS-ECW_JPEG_2000_SDK-5.5.0/Desktop_Read-Only /usr/local/hexagon/ecw5.5.0
+RUN rm -rf /usr/local/hexagon/ecw5.5.0/apidoc
+RUN rm -rf /usr/local/hexagon/ecw5.5.0/examples
+RUN rm -rf /usr/local/hexagon/ecw5.5.0/testdata
+RUN rm -rf /usr/local/hexagon/ecw5.5.0/third-party
+RUN rm -rf /usr/local/hexagon/ecw5.5.0/lib/x64
+RUN rm -rf /usr/local/hexagon/ecw5.5.0/lib/cpp11abi/x64/debug
+
+COPY ./ecw.ld.so.conf /etc/ld.so.conf.d/ecw.conf
+
 
 RUN ldconfig
